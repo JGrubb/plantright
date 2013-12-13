@@ -56,10 +56,16 @@ function removeElementWithValue($array, $key, $value) {
  * Implementation of hook_user().
  */
 function plantright_user($op, &$edit, &$account, $category = NULL) {
-  //dpm(array($op, $account));
-  if ($op == 'login') {
-    //dpm($account);
-    //dpm($edit);
+  switch ($op) {
+    case 'view':
+      // Remove the p tag wrapper from around content profile.
+      if (isset($account->content['content_profile'])) {
+        $account->content['content_profile']['#suffix'] = '';
+        $account->content['content_profile']['#prefix'] = '';
+        reset($account->content['content_profile']);
+        $account->content['content_profile'][key($account->content['content_profile'])]['#suffix'] = '';
+      }
+      break;
   }
 }
 
@@ -73,7 +79,18 @@ function plantright_nodeapi(&$node, $op) {
     $retail_member->field_retailer[0]['nid'] = $node->nid;
     node_save($retail_member);
   }
-  //dpm($node);
+  else if ($node->type == 'retail_member' && $op == 'view' && arg(0) == 'node' && arg(1) == $node->nid) {
+    // If user doesn't have permission to edit retail member, redirect to home.
+     if (!node_access('update', $node)) {
+       drupal_goto('');
+     }
+  }
+  else if ($node->type == 'slide' && $op == 'view'  && arg(0) == 'node' && arg(1) == $node->nid) {
+    // If user doesn't have permission to edit slide, redirect to home.
+     if (!node_access('update', $node)) {
+       drupal_goto('');
+     }
+  }
 }
 
 /**
@@ -194,6 +211,11 @@ function plantright_form_alter(&$form, &$form_state, $form_id) {
 //    $form['name']['#default_value'] = user_password();
     $form['#after_build'] = array('plantright_user_register_after_build');
     array_unshift($form['#validate'], '_plantright_register_validate');
+
+    if (isset($form['#node']) && isset($form['#node']->type) && 'continuing_education_member' == $form['#node']->type) {
+      $form['#redirect'] = 'node/2948';
+    }
+    
   }
   if ($form_id == 'user_login' || $form_id == 'user_login_block') {
     $form['#action'] = NULL;
@@ -207,22 +229,23 @@ function plantright_form_alter(&$form, &$form_state, $form_id) {
     $form['contact']['#prefix'] = '<div class="contact-info">';
     $form['contact']['#suffix'] = '</div>';
   }
-  if ($form_id == 'continuing_education_member_node_form' || $form_id == 'survey_profile_node_form' || $form_id == 'retail_member_node_form') {
+  if ($form_id == 'continuing_education_member_node_form' || $form_id == 'survey_profile_node_form' || $form_id == 'retail_member_node_form') {   
     $form['title']['#type'] = 'hidden';
     if (isset($form['account']['name'])) {
       $form['account']['name']['#type'] = 'hidden';
     }
     $form['#after_build'] = array('plantright_user_register_after_build');
 
-    if ($user->uid) {
-      $form['#redirect'] = "user/$user->uid";
+    // Redirect on edit back to user page.
+    $account_id = $form['uid']['#value'];
+    if ($account_id) {
+      $form['#redirect'] = "user/$account_id";
     }
     else {
       $form['#redirect'] = "user";
     }
   }
   if ($form_id == 'business_node_form') {
-    $form['#redirect'] = 'invite';
     $form['buttons']['submit']['#value'] = 'Register Store';
 
     $nursery_name = isset($form_state['values']['title']) ? $form_state['values']['title'] : '';
@@ -262,8 +285,10 @@ function plantright_form_alter(&$form, &$form_state, $form_id) {
 </ul>
 PLEDGE;
     $form['field_pledge']['#prefix'] = $pledge;
-    
+
     if (!user_access('administer nodes')) {
+      $form['#redirect'] = 'invite';
+      $form['group_admin_only']['#access'] = FALSE;
       $form['field_include_in_retailer_choice']['#access'] = FALSE;
       $form['field_is_certified_date']['#access'] = FALSE;
     }
@@ -352,6 +377,22 @@ function plantright_user_register_after_build(&$form, &$form_state) {
 }
 
 /**
+ * Implementation of hook_menu().
+ */
+function plantright_menu() {
+  $items = array();
+  $items['invites/user/%user'] = array(
+    'title' => 'Invite Status',
+    'page callback' => 'plantright_invite_status',
+    'page arguments' => array(2),
+    'access callback' => 'plantright_invite_status_access',
+    'access arguments' => array(2),
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+/**
  * Implementation of hook_menu_alter().
  */
 function plantright_menu_alter(&$items) {
@@ -416,7 +457,7 @@ function plantright_user_pass_reset(&$form_state, $uid, $timestamp, $hashed_pass
             }
           }
           elseif (in_array(14, $rids)) {
-            $node = node_load(array('type' => 'survey_profile', 'uid' => $user->uid));
+            $node = node_load(array('type' => PLANTRIGHT_SURVEY_PROFILE, 'uid' => $user->uid));
             drupal_set_message('Please reset your password.', 'status');
             if ($node) {
               drupal_goto('node/' . $node->nid . '/edit');
@@ -468,11 +509,11 @@ function plantright_mail_alter(&$message) {
 }
 
 /**
- * Helper function. Returns user's profile name.
+ * Helper function. Returns user's profile node.
  */
-function plantright_get_user_profile_name($account) {
-  static $plantright_user_profile_name;
-  if (!isset($plantright_user_profile_name)) {
+function plantright_get_user_profile($account) {
+  static $plantright_user_profile;
+  if (!isset($plantright_user_profile) || !isset($plantright_user_profile[$account->uid])) {
     $profile = NULL;
 
     if (in_array(15, array_keys($account->roles))) {
@@ -484,7 +525,18 @@ function plantright_get_user_profile_name($account) {
     else {
       $profile = content_profile_load(PLANTRIGHT_RETAIL_PROFILE, $account->uid);
     }
+    $plantright_user_profile[$account->uid] = $profile;
+  }
+  return $plantright_user_profile[$account->uid];
+}
 
+/**
+ * Helper function. Returns user's profile name.
+ */
+function plantright_get_user_profile_name($account) {
+  static $plantright_user_profile_name;
+  if (!isset($plantright_user_profile_name) || !isset($plantright_user_profile_name[$account->uid])) {
+    $profile = plantright_get_user_profile($account);
     if ($profile) {
       // Profile exists. Replace the username with the profile name
       $fname = $profile->{PLANTRIGHT_PROFILE_FNAME};
@@ -498,23 +550,25 @@ function plantright_get_user_profile_name($account) {
         $name = $name . ($name ? ' ' : '') . $lname;
       }
     }
-    $plantright_user_profile_name = $name ? $name : $account->name;
+    $plantright_user_profile_name[$account->uid] = $name ? $name : $account->name;
   }
-
-  return $plantright_user_profile_name;
+  return $plantright_user_profile_name[$account->uid];
 }
 
 /**
  * Helper function. Returns user's profile nursery.
  */
-function plantright_get_user_profile_nursery($account) {
+function plantright_get_user_profile_nursery($account, $entities = TRUE) {
   static $plantright_user_profile_nursery;
   if (!isset($plantright_user_profile_nursery)) {
     if ($profile = content_profile_load(PLANTRIGHT_RETAIL_PROFILE, $account->uid)) {
       if ($profile->{PLANTRIGHT_RETAIL_PROFILE_NURSERY} && isset($profile->{PLANTRIGHT_RETAIL_PROFILE_NURSERY}[0]) && $nursery_nid = $profile->{PLANTRIGHT_RETAIL_PROFILE_NURSERY}[0]['nid']) {
         $nursery = node_load($nursery_nid);
         if ($nursery) {
-          $nursery_name = check_plain($nursery->title);
+          $nursery_name = filter_xss($nursery->title);
+          if (!$entities) {
+            $nursery_name = html_entity_decode($nursery_name);
+          }
         }
       }
     }
@@ -551,11 +605,58 @@ function plantright_get_retailer_employees($retailer, $include_liason = TRUE) {
                          inner join node n on n.nid = rm.nid
                          inner join users u on n.uid = u.uid' . $join .
                         'where rm.field_retailer_nid = %d' . $where, $retailer->nid);
-  
+
   $fellow_citizens = array();
   while ($result = db_fetch_object($results)) {
     array_push($fellow_citizens, user_load($result->uid));
   }
-  
+
   return $fellow_citizens;
+}
+
+function plantright_get_partner_nurseries($entities = TRUE) {
+  $result = db_query("SELECT DISTINCT(node.nid) AS nid, node.title AS node_title, node.type AS node_type, node.nid AS node_nid
+    FROM {node} node
+    LEFT JOIN content_type_business node_data_field_is_certified ON node.vid = node_data_field_is_certified.vid
+    WHERE (node.type in ('business')) AND (node_data_field_is_certified.field_is_certified_value = 1)
+    GROUP BY nid
+    ORDER BY node_title ASC, node_nid ASC");
+  $nurseries = array();
+  while ($row = db_fetch_array($result)) {
+    $safe_row = array();
+    foreach ($row as $key => $val) {
+      $safe_row[$key] = filter_xss($val);
+      if (!$entities) {
+        $safe_row[$key] = html_entity_decode($safe_row[$key]);
+      }
+    }
+
+    $nurseries[] = $safe_row;
+  }
+  return $nurseries;
+}
+
+/**
+ * Page access callback for invite status.
+ */
+function plantright_invite_status_access($account) {
+  if (user_access('administer invitations') || $account->uid == $GLOBALS['user']->uid) {
+    return TRUE;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/**
+ * Page callback for invite status.
+ */
+function plantright_invite_status($account) {
+  if (module_exists('invite')) {
+    module_load_include('inc', 'invite', 'invite_admin');
+    return invite_admin_details($account);
+  }
+  else {
+    return t('Cannot get invites.');
+  }
 }

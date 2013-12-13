@@ -23,6 +23,8 @@
  * @see template_preprocess()
  * @see template_preprocess_block()
  */
+$classes = '';
+
 $account = $content['account'];
 $content = $block->content;
 
@@ -59,8 +61,12 @@ if ($register_progress == 'complete') {
   $invites_sent = 'complete';
   $invites_count = $registered_buyers;
 }
+
+if ($content['progress_complete']) {
+  $classes .= ' progress-complete';
+}
 ?>
-<div id="block-<?php print $block->module .'-'. $block->delta; ?>" class="block block-<?php print $block->module ?>">
+<div id="block-<?php print $block->module .'-'. $block->delta; ?>" class="block block-<?php print $block->module ?><?php print $classes; ?>">
   <?php if ($block->subject): ?>
   <h2><?php print $block->subject ?></h2>
   <?php endif;?>
@@ -69,7 +75,7 @@ if ($register_progress == 'complete') {
 	<h2 id="the-checklist">Your Progress</h2>
     <h3>Steps to Becoming a PlantRight Partner</h3>
 
-    <p>This checklist shows your completed steps and what's still required to become a certified PlantRight Partner nursery.</p>
+    <p>This checklist shows your completed steps and what's still required to become a PlantRight Retail Nursery Partner.</p>
 
     <div id="store-registered" class="item <?php print $content['store_registered'] ?>">
        <?php if ($content['store_registered'] == 'complete'): ?>
@@ -95,7 +101,7 @@ if ($register_progress == 'complete') {
       <?php endif; ?>
        <a href="#" class="dropdown-toggle">Registration progress details</a>
         <div class="dropdown">
-          <h4><?php print $registered_buyers_count ?> of <?php print $total_buyers_count ?> buyers and <?php print $registered_nonbuyers_count; ?> staff have created PlantRight accounts</h4>
+          <h4><?php print $registered_buyers_count ?> of <?php print $total_buyers_count ?> buyers and <?php print $registered_nonbuyers_count; ?> non-buyer staff have created PlantRight accounts</h4>
           <progress value="<?php print $register_percentage ?>" max="100" style="width:100%" ></progress>
           <?php if ($registered_buyers_count) : ?>
             <p>Buyers successfully registered:</p>
@@ -111,7 +117,7 @@ if ($register_progress == 'complete') {
             </ul>
           <?php endif; ?>
           <?php if ($registered_nonbuyers_count) : ?>
-            <p>Staff successfully registered:</p>
+            <p>Non-buyers successfully registered:</p>
             <ul>
               <?php foreach ($registered_nonbuyers as $nonbuyer): ?>
                 <?php $profile = node_load(array('uid' => $nonbuyer->uid, 'type' => 'retail_member')); ?>
@@ -144,18 +150,18 @@ if ($register_progress == 'complete') {
     </div>
 
     <div id="pass-quiz" class="item <?php print $group_quiz_progress ?>">
-      <?php if ($uncertified_buyers_count <= 0): ?>
+      <?php if ($total_buyers_count > 0 && $uncertified_buyers_count <= 0): ?>
         <p class="desc">All plant buyers at your nursery have completed the PlantRight 101 training.</p>
         <p class="status">Congratulations!  Visit PlantRight's <a href="/partner-resources">Partner Resources</a>.</p>
       <?php else : ?>
         <p class="desc">All plant buyers must pass the PlantRight 101 training.</p>
       <?php endif; ?>
-      <a href="#" class="dropdown-toggle">Certification progress details</a>
+      <a href="#" class="dropdown-toggle">Training progress details</a>
       <div class="dropdown">
-        <h4><?php print $certified_buyers_count ?> of <?php print $total_buyers_count ?> buyers and <?php print $certified_nonbuyers_count ?> staff members are certified</h4>
+        <h4><?php print $certified_buyers_count ?> of <?php print $total_buyers_count ?> buyers and <?php print $certified_nonbuyers_count ?> non-buyer staff are PlantRight Graduates</h4>
         
         <?php if ($certified_buyers_count) : ?>
-            <p>Certified buyers:</p>
+            <p>Buyer graduates:</p>
             <ul>
               <?php foreach ($certified_buyers as $u): ?>
                 <?php $profile = node_load(array('uid' => $u->uid, 'type' => 'retail_member')); ?>
@@ -169,7 +175,7 @@ if ($register_progress == 'complete') {
           <?php endif; ?>
             
            <?php if ($certified_nonbuyers_count) : ?>
-            <p>Certified staff:</p>
+            <p>Non-buyer graduates:</p>
             <ul>
               <?php foreach ($certified_nonbuyers as $u): ?>
                 <?php $profile = node_load(array('uid' => $u->uid, 'type' => 'retail_member')); ?>

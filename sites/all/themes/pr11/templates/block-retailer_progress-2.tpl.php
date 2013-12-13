@@ -23,6 +23,8 @@
  * @see template_preprocess()
  * @see template_preprocess_block()
  */
+$classes = '';
+
 $account = $content['account'];
 $content = $block->content;
 
@@ -44,7 +46,7 @@ $registered_nonbuyers_count = count($registered_nonbuyers);
 $certified_buyers = $content['certified_buyers'];
 $certified_buyers_count = count($certified_buyers);
 $slacker_buyers = $content['slacker_buyers'];
-$uncertified_buyers_count = $total_buyers_count - $registered_buyers_count;
+$uncertified_buyers_count = $total_buyers_count - $certified_buyers_count;
 
 $certified_nonbuyers = $content['certified_nonbuyers'];
 $certified_nonbuyers_count = count($certified_nonbuyers);
@@ -53,8 +55,12 @@ $slacker_nonbuyers = $content['slacker_nonbuyers'];
 $user_quiz_status = $content['account_quiz_status'];
 $user_quiz_progress = $user_quiz_status ? "complete" : "incomplete";
 $group_quiz_progress = ($total_buyers_count > 0 && $certified_buyers_count >= $total_buyers_count) ? "complete" : "incomplete";
+
+if ($content['progress_complete']) {
+  $classes .= ' progress-complete';
+}
 ?>
-<div id="block-<?php print $block->module . '-' . $block->delta; ?>" class="block block-<?php print $block->module ?>">
+<div id="block-<?php print $block->module . '-' . $block->delta; ?>" class="block block-<?php print $block->module ?><?php print $classes; ?>">
   <?php if ($block->subject): ?>
     <h2><?php print $block->subject ?></h2>
   <?php endif; ?>
@@ -62,7 +68,7 @@ $group_quiz_progress = ($total_buyers_count > 0 && $certified_buyers_count >= $t
   <div id="progress-block" class="content">
     <h2 id="the-checklist">Your Progress</h2>
     <h3>Steps to Becoming a PlantRight Partner</h3>
-    <p>This checklist shows your completed steps and what's still required to become a certified PlantRight Partner nursery.</p>
+    <p>This checklist shows your completed steps and what's still required to become a PlantRight Retail Nursery Partner.</p>
 
     <div id="register-account" class="item complete">
       <p class="desc">You've created an account at PlantRight.org</p>
@@ -87,7 +93,7 @@ $group_quiz_progress = ($total_buyers_count > 0 && $certified_buyers_count >= $t
     </div>
 
     <div id="pass-quiz" class="item <?php print $group_quiz_progress ?>">
-      <?php if ($uncertified_buyers_count <= 0): ?>
+      <?php if ($total_buyers_count > 0 && $uncertified_buyers_count <= 0): ?>
         <p class="desc">All plant buyers at your nursery have completed the PlantRight 101 training.</p>
         <p class="status">Congratulations!  Visit PlantRight's <a href="/partner-resources">Partner Resources</a>.</p>
       <?php else : ?>
@@ -95,7 +101,7 @@ $group_quiz_progress = ($total_buyers_count > 0 && $certified_buyers_count >= $t
       <?php endif; ?>
       <a href="#" class="dropdown-toggle">Your progress details</a>
       <div class="dropdown">
-        <h4><?php print $certified_buyers_count ?> of <?php print $total_buyers_count ?> buyers and <?php print $certified_nonbuyers_count ?> staff members are certified</h4>
+        <h4><?php print $certified_buyers_count ?> of <?php print $total_buyers_count ?> buyers and <?php print $certified_nonbuyers_count ?> non-buyer staff are PlantRight Graduates</h4>
       </div>
     </div>
 
