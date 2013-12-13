@@ -1,5 +1,4 @@
 <?php
-
 /**
  * @file block.tpl.php
  *
@@ -24,83 +23,86 @@
  * @see template_preprocess()
  * @see template_preprocess_block()
  */
-global $user;
+$classes = '';
 
+$account = $content['account'];
 $content = $block->content;
 
-$sql = "SELECT * FROM node WHERE type = '%s' AND uid = %d";
-$query = db_query("SELECT * FROM node WHERE type = '%s' AND uid = %d", 'retail_member', $user->uid);
-while ($result= db_fetch_object($query)) {
-	$profile_nid = $result->nid;
-}
-
-$total_invites = $content['total_invites'];
+$invites_count = count($content['invites']);
+$invites_sent = $invites_count ? "complete" : "incomplete";
 $ignored_invites = $content['ignored_invites'];
-$accepted_invites = $content['accepted_invites'];
-if ($total_invites = 0) {
-  $invite_percentage = "n/a";
-}
-else {
-  if ($total_invites > 0) {
-    $invite_percentage = ($accepted_invites / $total_invites) * 100;
-  }
-}
-//dpm($user);
-$invites_sent = $content['invites'] ? "complete" : "incomplete";
-$invite_progress = ($invite_percentage == 100) ? "complete" : "incomplete";
-$user_quiz_progress = in_array(11, array_keys($user->roles)) ? "complete" : "incomplete" ;
-//$group_quiz_progress = (count($content['certified_buyers']) >= $content['total_buyers']) ? "complete" : "incomplete";
 
-$group_quiz_progress = (!empty($content['certified_buyers']) && count($content['certified_buyers']) >= $content['total_buyers']) ? "complete" : "incomplete";
+$registered_staff_count = $content['registered_staff_count'];
+$total_buyers_count = $content['total_buyers_count'];
+
+$registered_buyers = $content['registered_buyers'];
+$registered_buyers_count = count($registered_buyers);
+$register_percentage = $total_buyers_count > 0 ? ($registered_buyers_count / $total_buyers_count) * 100 : 'n/a';
+$register_progress = ($register_percentage == 100) ? "complete" : "incomplete";
+
+$registered_nonbuyers = $content['registered_nonbuyers'];
+$registered_nonbuyers_count = count($registered_nonbuyers);
+
+$certified_buyers = $content['certified_buyers'];
+$certified_buyers_count = count($certified_buyers);
+$slacker_buyers = $content['slacker_buyers'];
+$uncertified_buyers_count = $total_buyers_count - $certified_buyers_count;
+
+$certified_nonbuyers = $content['certified_nonbuyers'];
+$certified_nonbuyers_count = count($certified_nonbuyers);
+$slacker_nonbuyers = $content['slacker_nonbuyers'];
+
+$user_quiz_status = $content['account_quiz_status'];
+$user_quiz_progress = $user_quiz_status ? "complete" : "incomplete";
+$group_quiz_progress = ($total_buyers_count > 0 && $certified_buyers_count >= $total_buyers_count) ? "complete" : "incomplete";
+
+if ($content['progress_complete']) {
+  $classes .= ' progress-complete';
+}
 ?>
-<div id="block-<?php print $block->module .'-'. $block->delta; ?>" class="block block-<?php print $block->module ?>">
-<?php if ($block->subject): ?>
-  <h2><?php print $block->subject ?></h2>
-<?php endif;?>
+<div id="block-<?php print $block->module . '-' . $block->delta; ?>" class="block block-<?php print $block->module ?><?php print $classes; ?>">
+  <?php if ($block->subject): ?>
+    <h2><?php print $block->subject ?></h2>
+  <?php endif; ?>
 
   <div id="progress-block" class="content">
-	<h2 id="the-checklist">Your Progress</h2>
+    <h2 id="the-checklist">Your Progress</h2>
     <h3>Steps to Becoming a PlantRight Partner</h3>
-    <p>This checklist shows your completed steps and what's still required to become a certified PlantRight Partner nursery.</p>
+    <p>This checklist shows your completed steps and what's still required to become a PlantRight Retail Nursery Partner.</p>
 
     <div id="register-account" class="item complete">
       <p class="desc">You've created an account at PlantRight.org</p>
     </div>
-    
+
     <div id="store-registered" class="item <?php print $content['store_registered'] ?>">
-       <?php if ($user->profile_info[0]->field_retailer[0]['nid']): ?>
-        <p class="desc">You've chosen your nursery. <span class="progress_option"><a href="/node/<?php print $profile_nid; ?>/edit">Edit profile</a></span></p>
-      <?php else : ?>
+      <?php if ($content['retailer_nid']): ?>
+        <p class="desc">You've chosen your nursery. <span class="progress_option"><a href="/node/<?php print $content['profile_nid']; ?>/edit">Edit profile</a></span></p>
+      <?php elseif ($content['profile_nid']): ?>
         <p class="desc"><a href="/node/<?php print $profile_nid; ?>/edit">Choose your nursery.</a></p>
+      <?php else : ?>
+        <p class="desc"><a href="/node/add/retail-member">Choose your nursery</a></p>
       <?php endif; ?>
-    </div> 
+    </div>
 
     <div id="review-material" class="item <?php print $user_quiz_progress ?>">
-      <?php if (in_array(11, array_keys($user->roles))): ?>
+      <?php if ($user_quiz_status): ?>
         <p class="desc">You've reviewed the training materials and passed the quiz. <span class="progress_option"><a href="/plantright-101-training">Revisit study materials</a></span></p>
       <?php else : ?>
         <p class="desc"><a href="/plantright-101-training">Review the PlantRight 101 training materials and take the 10-question quiz.</a></p>
       <?php endif; ?>
-    </div> 
-
-    <!--<div id="take-quiz" class="item <?php print $user_quiz_progress ?>">
-      <?php if (in_array(11, array_keys($user->roles))): ?>
-        <p class="desc">You've passed our 10 question quiz.</p>
-      <?php else : ?>
-        <p class="desc"><a href="/node/1421/take">Take our 10 question quiz here.</a></p>
-      <?php endif; ?>
-    </div> -->
+    </div>
 
     <div id="pass-quiz" class="item <?php print $group_quiz_progress ?>">
-      <?php if (!empty($certified_buyers) && $content['total_buyers'] >= count($certified_buyers)): ?>
-        <p class="desc">Congratulations! All plant buyers at your nursery have passed our 10 question quiz.</p>
+      <?php if ($total_buyers_count > 0 && $uncertified_buyers_count <= 0): ?>
+        <p class="desc">All plant buyers at your nursery have completed the PlantRight 101 training.</p>
+        <p class="status">Congratulations!  Visit PlantRight's <a href="/partner-resources">Partner Resources</a>.</p>
       <?php else : ?>
-	  <p class="desc">All plant buyers must pass our 10 question quiz.</p>
-        <a href="#" class="dropdown-toggle">Your progress details</a>
-        <div class="dropdown">
-          <h4><?php print count($content['certified_buyers']) ?> of <?php print $content['total_buyers'] ?> are certified</h4>
-        </div>
+        <p class="desc">All plant buyers must complete the PlantRight 101 training.</p>
       <?php endif; ?>
+      <a href="#" class="dropdown-toggle">Your progress details</a>
+      <div class="dropdown">
+        <h4><?php print $certified_buyers_count ?> of <?php print $total_buyers_count ?> buyers and <?php print $certified_nonbuyers_count ?> non-buyer staff are PlantRight Graduates</h4>
+      </div>
     </div>
 
   </div>

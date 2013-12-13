@@ -1,0 +1,270 @@
+<?php
+
+function plantright_business_directory_block($op = 'list', $delta = 0, $edit = array()) {
+  switch ($op) {
+    case 'list':
+      $blocks = array();
+      $blocks[0] = array(
+        'info' => t('Nursery Partners - Link back to main page'),
+        'weight' => 0,
+        'status' => 0,
+      );
+      $blocks[1] = array(
+        'info' => t('Nursery Partners - Links to pages'),
+        'weight' => 0,
+        'status' => 0,
+      );
+      $blocks[2] = array(
+        'info' => t('Nursery Partners - Page title'),
+        'weight' => 0,
+        'status' => 0,
+      );
+      $blocks[3] = array(
+        'info' => t('Nursery Partners - Find a nursery header'),
+        'weight' => 0,
+        'status' => 0,
+      );
+      return $blocks;
+      break;
+    case 'view':
+      switch ($delta) {
+        case 0:
+          $block = array(
+            'subject' => '',
+            'content' => l(t('Click here to view the complete list of California nurseries.'), 'nursery-partners'),
+          );
+          break;
+        case 1:
+          $items = array(
+            l(t('List by county'), 'nursery-partners'),
+            l(t('List all alphabetically'), 'nursery-partners/by-name'),
+          );
+          $block = array(
+            'subject' => '',
+            'content' => theme_item_list($items),
+          );
+          break;
+        case 2:
+          $content = t('PlantRight Nurseries');
+
+          switch (arg(1)) {
+            case 'by-county':
+              $county = ucwords(urldecode($_REQUEST['county']));
+              $content = t('Nurseries in @county', array('@county' => $county));
+              break;
+            case 'by-zip':
+              $distance = $_REQUEST['distance']['search_distance'];
+              $distance .= ' ' . $_REQUEST['distance']['search_units'] . 's';
+              $zip = $_REQUEST['distance']['postal_code'];
+              $content = t('Nurseries within <span class="distance">@distance</span> of zip code <span class="zip">@zip</span>', array(
+                '@distance' => $distance,
+                '@zip' => $zip,
+                  ));
+              break;
+          }
+
+          $block = array(
+            'subject' => '',
+            'content' => '<h2>' . $content . '</h2>',
+          );
+          break;
+        case 3:
+          $block = array(
+            'subject' => '',
+            'content' => '<h3>' . t('Find a nursery:') . '</h3>',
+          );
+          break;
+      }
+      return $block;
+      break;
+  }
+}
+
+/**
+ * Implementation of hook_form_alter().
+ */
+function plantright_business_directory_form_alter(&$form, &$form_state, $form_id) {
+  switch ($form_id) {
+    case 'views_exposed_form':
+      $view = $form_state['view'];
+      switch ($view->name) {
+        case 'business_directory':
+          $form['submit']['#value'] = t('Go');
+          if (isset($form['county'])) {
+            $options = _plantright_get_counties_by_state('ca');
+            $options = array('' => t('- All Counties -')) + $options;
+            $form['county'] = array(
+              '#type' => 'select',
+              '#size' => 1,
+              '#options' => $options,
+              '#empty_option' => '',
+              '#required' => FALSE,
+              '#default_value' => '',
+              '#weight' => $form['county']['#weight'],
+            );
+          }
+          if (isset($form['distance'])) {
+            $arg1 = arg(1);
+            if ($arg1 == 'by-zip' || $arg1 == 'by-county') {
+              $text = t('New search:');
+            }
+            else {
+              $text = t('Search by location:');
+            }
+
+            $form['distance']['label'] = array(
+              '#type' => 'markup',
+              '#value' => '<label>' . $text . '</label>',
+            );
+            $form['distance']['postal_code']['#title'] = t('Zip code');
+            $form['distance']['postal_code']['#size'] = 9;
+            $form['distance']['search_distance'] = array(
+              '#weight' => $form['distance']['search_distance']['#weight'],
+              '#type' => 'select',
+              '#title' => t('Radius'),
+              '#options' => array(
+                '5' => '5 miles',
+                '10' => '10 miles',
+                '25' => '25 miles',
+                '50' => '50 miles',
+                '100' => '100 miles',
+                '200' => '200 miles',
+              ),
+            );
+            $form['distance']['search_units'] = array(
+              '#type' => 'hidden',
+              '#value' => 'mile',
+            );
+          }
+          break;
+      }
+      break;
+    case 'business_node_form':
+      $form['#after_build'][] = 'plantright_business_node_form_after_build';
+      $form['#validate'][] = 'plantright_business_node_form_validate';
+      array_unshift($form['#submit'], 'plantright_business_node_form_submit');
+      break;
+  }
+}
+
+function plantright_business_node_form_after_build(&$form, &$form_state) {
+  if (isset($form['locations'])) {
+    foreach ($form['locations'] as $key => $location) {
+      if (is_array($location)) {
+        if (isset($location['county'])) {
+          $form['locations'][$key]['county']['#type'] = 'select';
+          $form['locations'][$key]['county']['#size'] = 1;
+          $form['locations'][$key]['county']['#options'] = array('' => '- SELECT -') + _plantright_get_counties_by_state('ca');
+        }
+        if (isset($location['province'])) {
+          $form['locations'][$key]['province']['#autocomplete_path'] = FALSE;
+          $form['locations'][$key]['province']['#title'] = t('State');
+          $form['locations'][$key]['province']['#value'] = 'California';
+          $location['province']['#default_value'] = 'California';
+          $form['locations'][$key]['province']['#type'] = 'textfield';
+          $form['locations'][$key]['province']['#attributes']['readonly'] = 'readonly';
+          $form['locations'][$key]['province']['#attributes']['disabled'] = 'disabled';
+        }
+      }
+    }
+  }
+  return $form;
+}
+
+function plantright_business_node_form_validate($form, &$form_state) {
+  $locations = $form_state['values']['locations'];
+  foreach ($locations as $key => $location) {
+    if (($location['street'] || $location['city'] || $location['postal_code']) && !$location['county']) {
+      form_set_error('locations][' . $key . '][county', t('County is required'));
+    }
+  }
+}
+
+function plantright_business_node_form_submit($form, &$form_state) {
+  $locations = $form_state['values']['locations'];
+  foreach ($locations as $key => $location) {
+    if (!$location['street'] && !$location['city'] && !$location['postal_code'] && !$location['county']) {
+      // Remove the empty ones, because they're getting saved with the force
+      // to CA option.
+      unset($form_state['values']['locations'][$key]);
+    }
+  }
+}
+
+function _plantright_get_counties_by_state($state) {
+  switch (strtolower($state)) {
+    case 'ca':
+    case 'california':
+      return array(
+        'Alameda' => 'Alameda',
+        'Alpine' => 'Alpine',
+        'Amador' => 'Amador',
+        'Butte' => 'Butte',
+        'Calaveras' => 'Calaveras',
+        'Colusa' => 'Colusa',
+        'Contra Costa' => 'Contra Costa',
+        'Del Norte' => 'Del Norte',
+        'El Dorado' => 'El Dorado',
+        'Fresno' => 'Fresno',
+        'Glenn' => 'Glenn',
+        'Humboldt' => 'Humboldt',
+        'Imperial' => 'Imperial',
+        'Inyo' => 'Inyo',
+        'Kern' => 'Kern',
+        'Kings' => 'Kings',
+        'Lake' => 'Lake',
+        'Lassen' => 'Lassen',
+        'Los Angeles' => 'Los Angeles',
+        'Madera' => 'Madera',
+        'Marin' => 'Marin',
+        'Mariposa' => 'Mariposa',
+        'Mendocino' => 'Mendocino',
+        'Merced' => 'Merced',
+        'Modoc' => 'Modoc',
+        'Mono' => 'Mono',
+        'Monterey' => 'Monterey',
+        'Napa' => 'Napa',
+        'Nevada' => 'Nevada',
+        'Orange' => 'Orange',
+        'Placer' => 'Placer',
+        'Plumas' => 'Plumas',
+        'Riverside' => 'Riverside',
+        'Sacramento' => 'Sacramento',
+        'San Benito' => 'San Benito',
+        'San Bernardino' => 'San Bernardino',
+        'San Diego' => 'San Diego',
+        'San Francisco' => 'San Francisco',
+        'San Joaquin' => 'San Joaquin',
+        'San Luis Obispo' => 'San Luis Obispo',
+        'San Mateo' => 'San Mateo',
+        'Santa Barbara' => 'Santa Barbara',
+        'Santa Clara' => 'Santa Clara',
+        'Santa Cruz' => 'Santa Cruz',
+        'Shasta' => 'Shasta',
+        'Sierra' => 'Sierra',
+        'Siskiyou' => 'Siskiyou',
+        'Solano' => 'Solano',
+        'Sonoma' => 'Sonoma',
+        'Stanislaus' => 'Stanislaus',
+        'Sutter' => 'Sutter',
+        'Tehama' => 'Tehama',
+        'Trinity' => 'Trinity',
+        'Tulare' => 'Tulare',
+        'Tuolumne' => 'Tuolumne',
+        'Ventura' => 'Ventura',
+        'Yolo' => 'Yolo',
+        'Yuba' => 'Yuba',
+      );
+      break;
+  }
+}
+
+/**
+ * Implementation of hook_views_api().
+ */
+function plantright_business_directory_views_api() {
+  return array(
+    'api' => 2,
+    'path' => drupal_get_path('module', 'plantright_business_directory') . '/views',
+  );
+}

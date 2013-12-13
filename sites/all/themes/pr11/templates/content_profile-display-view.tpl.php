@@ -1,13 +1,9 @@
 <?php
-// $Id: content_profile-display-view.tpl.php,v 1.1.2.2 2009/01/04 11:46:29 fago Exp $
-
 /**
  * @file content-profile-display-view.tpl.php
  *
  * Theme implementation to display a content-profile.
  */
-global $user;
-//dpm($user);
 ?>
 <div class="content-profile-display" id="content-profile-display-<?php print $type; ?>">
   <?php if (isset($tabs)) : ?>
@@ -20,32 +16,58 @@ global $user;
     </ul>
   <?php endif; ?>
   <?php if (isset($node->nid) && isset($content)): ?>
-    <?php //dpm($node); ?>
-    <h2>Your PlantRight <?php print $node->readable_type; ?> Account</h2>
-    <?php foreach ($node->profile_items as $profile_item): ?>
-    <div class="profile-item">
-      <div class="label"><?php print $profile_item['label']; ?></div>
-      <div class="value"><?php print $profile_item['value'] ?></div>
+    <div class="partner-account-data">
+      <h2>Account Information</h2>
+      <div class="profile-item">
+        <div class="label">Name</div>
+        <div class="value"><?php print $node->profile_items['first_name']['value'] . ' ' . $node->profile_items['last_name']['value']; ?></div>
+      </div>
+
+      <?php if ($node->type == 'retail_member'): ?>
+        <div class="profile-item">
+          <div class="label">Account type</div>
+          <div class="value">Retail nursery partner</div>
+        </div>
+        <div class="profile-item">
+          <div class="label">Retailer</div>
+          <div class="value">
+            <?php if ($node->retailer): ?>
+              <?php print $node->retailer->title ?>
+            <?php elseif ((in_array(7, $user_roles) || in_array(8, $user_roles)) && !$node->retailer): ?>
+              <p>No affiliated retailer. <a href="/node/add/business">Register yours here.</a></p>
+            <?php else: ?>
+              <p><a href="/node/<?php print $node->nid ?>/edit">Edit your profile</a> to choose an affiliated retailer.</p>
+            <?php endif; ?>
+          </div>
+        </div>
+        <div class="profile-item">
+          <div class="label">Nursery role</div>
+          <div class="value">
+            <?php if (in_array(9, $user_roles)): ?>
+              Retail employee involved in plant purchasing
+            <?php elseif (in_array(10, $user_roles)): ?>
+              Retail employee not involved in plant purchasing
+            <?php elseif (in_array(7, $user_roles)): ?>
+              Manager involved in plant purchasing
+            <?php elseif (in_array(8, $user_roles)): ?>
+              Manager not involved in plant purchasing
+            <?php endif; ?>
+          </div>
+        </div>
+      <?php elseif ($node->type == 'continuing_education_member'): ?>
+
+      <?php endif; ?>
+      <div class="profile-item">
+          <div class="label">Member since</div>
+          <div class="value"><?php print date('n/j/Y', $user->created); ?></div>
+      </div>
+
+      <?php /* foreach ($node->profile_items as $key => $profile_item): ?>
+        <div class="profile-item">
+        <div class="label"><?php print $profile_item['label']; ?></div>
+        <div class="value"><?php print $profile_item['value'] ?></div>
+        </div>
+        <?php endforeach; */ ?>
     </div>
-    <?php endforeach; ?>
-	</div>
-  <?php endif; ?>
-  <?php if ($node->type == 'retail_member'): ?>
-    <h3>Retailer</h3>
-    <?php if ($node->retailer): ?>
-      <p>You are affiliated with <strong><?php print $node->retailer->title ?></strong></p>
-    <?php elseif((in_array(7, array_keys($user->roles)) || in_array(8, array_keys($user->roles)))
-                  && !$node->retailer): ?>
-      <p>No affiliated nursery. <a href="/node/add/business">Register yours here.</a></p>
-    <?php else: ?>
-      <p>Edit your profile to choose an affiliated retailer.</p>
-    <?php endif; ?>
-    <?php if(in_array(11, array_keys($user->roles))): ?>
-      <a class="btn-primary" href="/node/1421/certificate">Your Certificate of Achievement</a>
-      <a class="btn-primary" href="/partner-resources">Partner Resources</a>
-    <?php endif; ?>
-  <?php endif; ?>
-  <?php global $user; if ($user->uid == $node->uid): ?>
-    <a class="btn-primary" href="/node/<?php print $node->nid ?>/edit">Edit Profile/Password</a>
   <?php endif; ?>
 </div>

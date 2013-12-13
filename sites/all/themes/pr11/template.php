@@ -3,58 +3,57 @@
 /**
  * Implementation of hook_theme().
  */
-
 function pr11_theme() {
   $items = array();
   // Consolidate a variety of theme functions under a single template type.
   $items['block'] = array(
     'arguments' => array('block' => NULL),
     'template' => 'object',
-    'path' => drupal_get_path('theme', 'pr11') .'/templates',
+    'path' => drupal_get_path('theme', 'pr11') . '/templates',
   );
   $items['box'] = array(
     'arguments' => array('title' => NULL, 'content' => NULL, 'region' => 'main'),
     'template' => 'object',
-    'path' => drupal_get_path('theme', 'pr11') .'/templates',
+    'path' => drupal_get_path('theme', 'pr11') . '/templates',
   );
   $items['comment'] = array(
     'arguments' => array('comment' => NULL, 'node' => NULL, 'links' => array()),
     'template' => 'object',
-    'path' => drupal_get_path('theme', 'pr11') .'/templates',
+    'path' => drupal_get_path('theme', 'pr11') . '/templates',
   );
   $items['node'] = array(
     'arguments' => array('node' => NULL, 'teaser' => FALSE, 'page' => FALSE),
     'template' => 'node',
-    'path' => drupal_get_path('theme', 'pr11') .'/templates',
+    'path' => drupal_get_path('theme', 'pr11') . '/templates',
   );
   $items['fieldset'] = array(
     'arguments' => array('element' => array()),
     'template' => 'fieldset',
-    'path' => drupal_get_path('theme', 'pr11') .'/templates',
+    'path' => drupal_get_path('theme', 'pr11') . '/templates',
   );
 
   // Use a template for form elements
   $items['form_element'] = array(
     'arguments' => array('element' => array(), 'value' => NULL),
     'template' => 'form-item',
-    'path' => drupal_get_path('theme', 'pr11') .'/templates',
+    'path' => drupal_get_path('theme', 'pr11') . '/templates',
   );
 
   // Print friendly page headers.
   $items['print_header'] = array(
     'arguments' => array(),
     'template' => 'print-header',
-    'path' => drupal_get_path('theme', 'pr11') .'/templates',
+    'path' => drupal_get_path('theme', 'pr11') . '/templates',
   );
 
   // Split out pager list into separate theme function.
   $items['pager_list'] = array('arguments' => array(
-    'tags' => array(),
-    'limit' => 10,
-    'element' => 0,
-    'parameters' => array(),
-    'quantity' => 9,
-  ));
+      'tags' => array(),
+      'limit' => 10,
+      'element' => 0,
+      'parameters' => array(),
+      'quantity' => 9,
+      ));
 
   return $items;
 }
@@ -147,7 +146,6 @@ function _pr11_print_book_children($link, &$content, &$zomglimit, $limit = 500) 
 /**
  * Preprocess functions ===============================================
  */
- 
 //function pr11_preprocess_views_view__nursery_list__page_1(&$vars) {
 //  $results = $vars['view']->result;
 //  foreach($results as $key => $result) {
@@ -156,23 +154,32 @@ function _pr11_print_book_children($link, &$content, &$zomglimit, $limit = 500) 
 //    }
 //  }
 //  $vars['view']->result = $results;
-//  dpm($vars);
 //  return $vars;
 //}
-
 //
 //function pr11_preprocess_views_view_field__nursery_list__ops(&$vars) {
-//  //dpm($vars['row']);
-//  
+//
 //}
 
 /**
  * Implementation of preprocess_page().
  */
 function pr11_preprocess_page(&$vars) {
+  $nodes = array(2392);
+  if (isset($_REQUEST['popup']) && in_array($vars['node']->nid, $nodes)) {
+    $vars['template_files'][] = 'page-popup';
+  }
+  
   $attr = array();
-  $attr['class'] = $vars['body_classes'];
+  $attr['class'] = trim($vars['body_classes']);
   $attr['class'] .= ' pr11'; // Add the pr11 class so that we can avoid using the 'body' selector
+  if (arg(0) == 'node' && arg(2) == 'edit') {
+    $attr['class'] .= ' node-edit';
+  }
+  else if (arg(0) == 'user' && arg(2) == 'edit') {
+    $attr['class'] .= ' user-edit';
+  }
+
   // Replace screen/all stylesheets with print
   // We want a minimal print representation here for full control.
   if (isset($_GET['print'])) {
@@ -202,11 +209,11 @@ function pr11_preprocess_page(&$vars) {
   // Link site name to frontpage
   $vars['site_name'] = l($vars['site_name'], '<front>');
 
-  // Don't render the attributes yet so subthemes can alter them
   $vars['attr'] = $attr;
+  $vars['body_classes'] = $attr['class'];
 
   // Skip navigation links (508).
-  $vars['skipnav'] = "<a id='skipnav' href='#content'>" . t('Skip navigation') ."</a>";
+  $vars['skipnav'] = "<a id='skipnav' href='#content'>" . t('Skip navigation') . "</a>";
 }
 
 /**
@@ -246,7 +253,6 @@ function pr11_preprocess_node(&$vars) {
   $attr['class'] = "node node-{$vars['node']->type}";
   $attr['class'] .= $vars['node']->sticky ? ' sticky' : '';
   $vars['attr'] = $attr;
-  //dpm($vars);
   $vars['hook'] = 'node';
   $vars['is_prose'] = TRUE;
 
@@ -254,9 +260,8 @@ function pr11_preprocess_node(&$vars) {
   if (isset($_GET['print'])) {
     $vars['post_object'] = pr11_print_book_children($vars['node']);
   }
-  if ($vars['type'] == 'retail_member' || $vars['type'] == 'survey_profile') {
+  if ($vars['type'] == 'retail_member' || $vars['type'] == 'survey_profile' || $vars['type'] == 'continuing_education_member') {
     $user = user_load($vars['uid']);
-    //dpm($vars);
     $type = ucwords(preg_replace('/_/', ' ', $vars['node']->type));
     $vars['node']->readable_type = $type;
     $vars['node']->profile_items['first_name']['label'] = "First Name:";
@@ -274,7 +279,12 @@ function pr11_preprocess_node(&$vars) {
     }
     $vars['node']->user_roles = $user_roles;
   }
-  //dpm($vars);
+
+  // Node 2392 is the registration popup node and has its own template.
+  // Add JS specific to it.
+  if ($vars['node']->nid == '2392') {
+    drupal_add_js(drupal_get_path('theme', 'pr11') . '/js/plantright-registration.js');
+  }
 }
 
 /**
@@ -295,14 +305,13 @@ function pr11_preprocess_comment(&$vars) {
  */
 function pr11_preprocess_fieldset(&$vars) {
   $element = $vars['element'];
-  //dpm($vars);
   $attr = isset($element['#attributes']) ? $element['#attributes'] : array();
   $attr['class'] = !empty($attr['class']) ? $attr['class'] : '';
   $attr['class'] .= " fieldset ";
   $attr['class'] .= $vars['id'];
-  $attr['class'] .= !empty($element['#title']) ? ' titled' : '';
-  $attr['class'] .= !empty($element['#collapsible']) ? ' collapsible' : '';
-  $attr['class'] .= !empty($element['#collapsible']) && !empty($element['#collapsed']) ? ' collapsed' : '';
+  $attr['class'] .=!empty($element['#title']) ? ' titled' : '';
+  $attr['class'] .=!empty($element['#collapsible']) ? ' collapsible' : '';
+  $attr['class'] .=!empty($element['#collapsible']) && !empty($element['#collapsed']) ? ' collapsed' : '';
   $vars['attr'] = $attr;
 
   $description = !empty($element['#description']) ? "<div class='description'>{$element['#description']}</div>" : '';
@@ -354,10 +363,10 @@ function pr11_preprocess_form_element(&$vars) {
 function pr11_preprocess_print_header(&$vars) {
   $vars = array(
     'base_path' => base_path(),
-    'theme_path' => base_path() .'/'. path_to_theme(),
+    'theme_path' => base_path() . '/' . path_to_theme(),
     'site_name' => variable_get('site_name', 'Drupal'),
   );
-  $count ++;
+  $count++;
 }
 
 /**
@@ -392,7 +401,7 @@ function pr11_menu_local_tasks($type = '') {
  */
 function pr11_file($element) {
   _form_set_class($element, array('form-file'));
-  $attr = $element['#attributes'] ? ' '. drupal_attributes($element['#attributes']) : '';
+  $attr = $element['#attributes'] ? ' ' . drupal_attributes($element['#attributes']) : '';
   return theme('form_element', $element, "<input type='file' name='{$element['#name']}' id='{$element['#id']}' size='15' {$attr} />");
 }
 
@@ -405,8 +414,8 @@ function pr11_file($element) {
 function pr11_blocks($region) {
   // Allow theme functions some additional control over regions.
   $registry = theme_get_registry();
-  if (isset($registry['blocks_'. $region])) {
-    return theme('blocks_'. $region);
+  if (isset($registry['blocks_' . $region])) {
+    return theme('blocks_' . $region);
   }
   return module_exists('context') && function_exists('context_blocks') ? context_blocks($region) : theme_blocks($region);
 }
@@ -417,12 +426,12 @@ function pr11_blocks($region) {
 function pr11_username($object) {
   if (!empty($object->name)) {
     // Shorten the name when it is too long or it will break many tables.
-    $name = drupal_strlen($object->name) > 20 ? drupal_substr($object->name, 0, 15) .'...' : $object->name;
+    $name = drupal_strlen($object->name) > 20 ? drupal_substr($object->name, 0, 15) . '...' : $object->name;
     $name = check_plain($name);
 
     // Default case -- we have a real Drupal user here.
     if ($object->uid && user_access('access user profiles')) {
-      return l($name, 'user/'. $object->uid, array('attributes' => array('class' => 'username', 'title' => t('View user profile.'))));
+      return l($name, 'user/' . $object->uid, array('attributes' => array('class' => 'username', 'title' => t('View user profile.'))));
     }
     // Handle cases where user is not registered but has a link or name available.
     else if (!empty($object->homepage)) {
@@ -433,7 +442,7 @@ function pr11_username($object) {
       return "<span class='username'>{$name}</span>";
     }
   }
-  return "<span class='username'>". variable_get('anonymous', t('Anonymous')) ."</span>";
+  return "<span class='username'>" . variable_get('anonymous', t('Anonymous')) . "</span>";
 }
 
 /**
@@ -477,7 +486,6 @@ function pr11_pager_list($tags = array(), $limit = 10, $element = 0, $parameters
     // max is the maximum page number
     $pager_max = $pager_total[$element];
     // End of marker calculations.
-
     // Prepare for generation loop.
     $i = $pager_first;
     if ($pager_last > $pager_max) {
@@ -545,8 +553,7 @@ function pr11_pager_link($text, $page_new, $element, $parameters = array(), $att
     }
     if (isset($titles[$text])) {
       $attributes['title'] = $titles[$text];
-    }
-    else if (is_numeric($text)) {
+    } else if (is_numeric($text)) {
       $attributes['title'] = t('Go to page @number', array('@number' => $text));
     }
   }
@@ -584,6 +591,30 @@ function pr11_views_mini_pager($tags = array(), $limit = 10, $element = 0, $para
   }
 }
 
+/**
+ * Override of theme_views_mini_pager for the trivia view.
+ */
+function pr11_views_mini_pager__trivia($tags = array(), $limit = 10, $element = 0, $parameters = array(), $quantity = 9) {
+  global $pager_page_array, $pager_total;
+  $pager_prev = $_SESSION['pr_trivia_pager_previous_page'];
+  $pager_current = $pager_page_array[$element] + 1;
+  $_SESSION['pr_trivia_pager_previous_page'] = $pager_current;
+  
+  $text = t('Give me another!');
+  $links = array();
+  if ($pager_total[$element] > 1) {
+    // If going forward & there is a next page, show next link.
+    if ($pager_current == 1 || $pager_current > $pager_prev) {
+      $links['pager-next'] = theme('pager_next', $text, $limit, $element, 1, $parameters);
+    }
+    // Otherwise, show previous link
+    if (empty($links['pager-next'])) {
+      $links['pager-previous'] = theme('pager_previous', $text, $limit, $element, 1, $parameters);
+    }
+
+    return theme('links', $links, array('class' => 'links pager views-mini-pager'));
+  }
+}
 
 /**
  * Sets the body tag class and id attributes.
@@ -597,31 +628,42 @@ function pr11_views_mini_pager($tags = array(), $limit = 10, $element = 0, $para
  * @return
  *   string The rendered id and class attributes.
  */
-function phptemplate_body_attributes($is_front = false, $layout = 'none') {
+function phptemplate_body_attributes($is_front = false, $layout = 'none', $attr = array()) {
 
   if ($is_front) {
     $body_id = $body_class = 'homepage';
-  }
-  else {
+  } else {
     // Remove base path and any query string.
     global $base_path;
-    list(,$path) = explode($base_path, $_SERVER['REQUEST_URI'], 2);
-    list($path,) = explode('?', $path, 2);
+    list(, $path) = explode($base_path, $_SERVER['REQUEST_URI'], 2);
+    list($path, ) = explode('?', $path, 2);
     $path = rtrim($path, '/');
     // Construct the id name from the path, replacing slashes with dashes.
     $body_id = str_replace('/', '-', $path);
     // Construct the class name from the first part of the path only.
-    list($body_class,) = explode('/', $path, 2);
+    list($body_class, ) = explode('/', $path, 2);
   }
-  $body_id = 'page-'. $body_id;
-  $body_class = 'section-'. $body_class;
+  $body_id = 'page-' . $body_id;
+  $body_class = 'section-' . $body_class;
 
   // Use the same sidebar classes as Garland.
-  $sidebar_class = ($layout == 'both') ? 'sidebars' : "sidebar-$layout";
+  //$sidebar_class = ($layout == 'both') ? 'sidebars' : "sidebar-$layout";
+  
+  foreach($attr as $key => $val) {
+    switch ($key) {
+      case 'class':
+        $body_class .= ' ' . $val;
+        break;
+      case 'id':
+        $body_id = $val;
+        break;
+      default:
+        break;
+    }
+  }
 
   return " id=\"$body_id\" class=\"$body_class $sidebar_class\"";
 }
-
 
 /**
  * Theme function for the invite form.
@@ -648,7 +690,7 @@ function pr11_invite_form($form) {
     $output .= '<div class="invite-message"><div class="opening">';
 
     // Prepare invitation message.
-    $message_form = "</p></div>\n". drupal_render($form['message']) ."\n".'<div class="closing"><p>';
+    $message_form = "</p></div>\n" . drupal_render($form['message']) . "\n" . '<div class="closing"><p>';
     $body = _filter_autop(t(_invite_get_mail_template()));
 
     // Perform token replacement on message body.
@@ -664,4 +706,48 @@ function pr11_invite_form($form) {
   $output .= '<br /><a href="/plantright-101-training">Skip this step (I\'m the only buyer)</a>';
 
   return $output;
+}
+
+/**
+ * Implementation of hook_preprocess_location().
+ */
+function pr11_preprocess_location($vars) {
+  // Change the format of the map link.
+  $vars['map_link'] = str_replace(array('See map:', 'Google Maps'), array('', 'map'), $vars['map_link']);
+
+  // Format the phone number.
+  // Takes numbers entered as either 5551234567 or 555-123-4567 and formats
+  // as (555) 123-4567.
+  $vars['phone'] = preg_replace('/(\d{3})-?(\d{3})-?(\d{4})$/', '($1) $2-$3', $vars['phone']);
+
+  // Country name is set to hidden in settings, but still showing.
+  // Remove below to show again.
+  $vars['country_name'] = '';
+}
+
+/**
+ * Implementation of theme_mimemail_message().
+ */
+function pr11_preprocess_mimemail_message(&$vars) {
+  $vars['body'] = str_replace('<br />', '', $vars['body']);
+  $vars['body'] = str_replace('•', '<br />' . '•', $vars['body']);
+}
+
+/**
+ * Preprocess the content profile display view.
+ */
+function pr11_preprocess_user_profile($vars) {
+  $account = user_load(arg(1));
+  $vars['name'] = plantright_get_user_profile_name($account);
+  $vars['node'] = plantright_get_user_profile($account);
+  $vars['user_roles'] = array_keys($account->roles);
+}
+
+/**
+ * Preprocess the content profile display view.
+ */
+function pr11_preprocess_content_profile_display_view($vars) {
+  $vars['user'] = user_load($vars['uid']);
+  $vars['name'] = $vars['node']->profile_items['first_name']['value'] . ' ' . $vars['node']->profile_items['first_name']['value'];
+  $vars['user_roles'] = array_keys($vars['user']->roles);
 }

@@ -1,42 +1,77 @@
 <?php
 
-function plantright_flag($action, $flag, $content_id, $account) {
-	if($action == 'flag' && $flag->name == 'nursery_flag') {
-		$node = node_load($content_id);
-		//dpm($node->field_surveying_user);
-		$member = array();
-		$member['uid'] = $account->uid;
-		array_push($node->field_surveying_user, $member);
-		//dpm($node->field_surveying_user);
-		node_save($node);
-	}
-	if($action == 'unflag' && $flag->name == 'nursery_flag') {
-	  $node = node_load($content_id);
-	  $users = $node->field_surveying_user;
-	  $node->field_surveying_user = removeElementWithValue($users, "uid", $account->uid);
-	  node_save($node);
-	}  
+DEFINE('PLANTRIGHT_RETAIL_PROFILE', 'retail_member');
+DEFINE('PLANTRIGHT_RETAIL_PROFILE_NURSERY', 'field_retailer');
+
+DEFINE('PLANTRIGHT_CONTINUING_EDUCATION_PROFILE', 'continuing_education_member');
+DEFINE('PLANTRIGHT_SURVEY_PROFILE', 'survey_profile');
+
+DEFINE('PLANTRIGHT_PROFILE_FNAME', 'field_fname');
+DEFINE('PLANTRIGHT_PROFILE_LNAME', 'field_lname');
+
+
+/**
+ * Include token support.
+ */
+require_once drupal_get_path('module', 'plantright') . '/plantright_token.inc';
+
+/**
+ * Implementation of hook_init().
+ */
+function plantright_init() {
+  drupal_add_js(drupal_get_path('module', 'plantright') . '/js/plantright.js');
 }
 
-function removeElementWithValue($array, $key, $value){
-  foreach($array as $subKey => $subArray){
-    if($subArray[$key] == $value){
+/**
+ * Implementation of hook_flag().
+ */
+function plantright_flag($action, $flag, $content_id, $account) {
+  if ($action == 'flag' && $flag->name == 'nursery_flag') {
+    $node = node_load($content_id);
+    //dpm($node->field_surveying_user);
+    $member = array();
+    $member['uid'] = $account->uid;
+    array_push($node->field_surveying_user, $member);
+    //dpm($node->field_surveying_user);
+    node_save($node);
+  }
+  if ($action == 'unflag' && $flag->name == 'nursery_flag') {
+    $node = node_load($content_id);
+    $users = $node->field_surveying_user;
+    $node->field_surveying_user = removeElementWithValue($users, "uid", $account->uid);
+    node_save($node);
+  }
+}
+
+function removeElementWithValue($array, $key, $value) {
+  foreach ($array as $subKey => $subArray) {
+    if ($subArray[$key] == $value) {
       unset($array[$subKey]);
     }
   }
   return $array;
 }
 
-
-
+/**
+ * Implementation of hook_user().
+ */
 function plantright_user($op, &$edit, &$account, $category = NULL) {
-  //dpm(array($op, $account));
-  if ($op == 'login') {
-    //dpm($account);
-    //dpm($edit);
+  switch ($op) {
+    case 'view':
+      // Remove the p tag wrapper from around content profile.
+      if (isset($account->content['content_profile'])) {
+        $account->content['content_profile']['#suffix'] = '';
+        $account->content['content_profile']['#prefix'] = '';
+        reset($account->content['content_profile']);
+        $account->content['content_profile'][key($account->content['content_profile'])]['#suffix'] = '';
+      }
+      break;
   }
 }
 
+/**
+ * Implementation of hook_nodeapi().
+ */
 function plantright_nodeapi(&$node, $op) {
   // When retail manager creates a Retailer, set the association
   if ($node->type == 'business' && $op == 'insert') {
@@ -44,18 +79,58 @@ function plantright_nodeapi(&$node, $op) {
     $retail_member->field_retailer[0]['nid'] = $node->nid;
     node_save($retail_member);
   }
-  //dpm($node);
+  else if ($node->type == 'retail_member' && $op == 'view' && arg(0) == 'node' && arg(1) == $node->nid) {
+    // If user doesn't have permission to edit retail member, redirect to home.
+     if (!node_access('update', $node)) {
+       drupal_goto('');
+     }
+  }
+  else if ($node->type == 'slide' && $op == 'view'  && arg(0) == 'node' && arg(1) == $node->nid) {
+    // If user doesn't have permission to edit slide, redirect to home.
+     if (!node_access('update', $node)) {
+       drupal_goto('');
+     }
+  }
 }
 
+/**
+ * Helper function that validates login for special login handling.
+ * Allows for notifying users with shared email addresses to log in using
+ * their username instead.
+ * (The first user to sign up with an email address will be able to log in.
+ * Other users must use their username.)
+ */
+function _plantright_login_validate(&$form, &$form_state) {
+  $entered_name = $form['name']['#value'];
+  if (strpos($entered_name, '@') !== FALSE) {
+    // Logging in as an email address. Check if email is duplicate
+    $count = db_result(db_query('SELECT count(*) FROM {users} WHERE mail = "%s"', $entered_name));
+    if ($count > 1) {
+      // Check if the password is correct for the first user with this address.
+      // (The login will be successful if so.
+      // If not, we need to notify the user to user their username instead.)
+      $name = db_result(db_query("SELECT name FROM {users} WHERE LOWER(mail) = LOWER('%s')", $form_state['values']['name']));
+      $match = db_result(db_query("SELECT count(*) FROM {users} WHERE name = '%s' AND pass = '%s'", $name, md5($form_state['values']['pass'])));
+      if (!$match) {
+        form_set_error('name', t("The email address %mail is shared. Please login with your username instead of your email address.", array('%mail' => $entered_name)));
+      }
+    }
+  }
+}
+
+/**
+ * Helper functiont that handles the user login form submission.
+ */
 function _plantright_login_action(&$form, &$form_state) {
   global $user;
   $rids = array_keys($user->roles);
   // if a Retailer member,
-  if (in_array(7, $rids) || 
-      in_array(8, $rids) || 
-      in_array(9, $rids) || in_array(10, $rids)) {
+  if (in_array(7, $rids) ||
+      in_array(8, $rids) ||
+      in_array(9, $rids) ||
+      in_array(10, $rids) ||
+      in_array(15, $rids)) {
     drupal_goto("user/$user->uid");
-
   }
 //  $node = node_load(array('uid' => $account->uid, 'type' => 'retail_member'));
 //  $rids = array_keys($user->roles);
@@ -77,18 +152,74 @@ function _plantright_login_action(&$form, &$form_state) {
 //  }
 }
 
+/**
+ * Helper function that validates the user registration form.
+ * Allows for handling of the username field with shared email addresses.
+ * And automatically creating usernames for non-shared email addresses.
+ */
+function _plantright_register_validate(&$form, &$form_state) {
+  $username = $form_state['values']['name'];
+  $mail = $form_state['values']['mail'];
+  $mail_taken = db_result(db_query("SELECT mail FROM {users} WHERE name = '%s'", $username));
 
+  if ($mail_taken != $mail) {
+    // The username is not taken or already taken by another email address.
+
+    // Is this user signing up with a shared email address?
+    // If it is a shared email, the user has picked an already taken username.
+    // They will need to choose another. (Drupal will handle that message.)
+    $is_shared_email = db_result(db_query("SELECT name FROM {users} WHERE LOWER(mail) = LOWER('%s')", $mail));
+    if (!$is_shared_email) {
+      // It's not a shared email, automatically set the username.
+
+      // Remove unacceptable characters.
+      $namenew = preg_replace('/[^a-zA-Z0-9.-\s]/', '', $form_state['values']['name']);
+
+      // If username generated from email already exists, append space and number eg:(chris 123)
+      if (db_result(db_query("SELECT count(*) FROM {users} WHERE LOWER(name) = LOWER('%s')", $namenew)) > 0) {
+        // Find the next number available to append to the name.
+        $sql = "SELECT SUBSTRING_INDEX(name,' ',-1) FROM {users} WHERE name REGEXP '%s' ORDER BY CAST(SUBSTRING_INDEX(name,' ',-1) AS UNSIGNED) DESC LIMIT 1";
+        $name_index = db_result(db_query($sql, '^' . $namenew . ' [0-9]+$'));
+        $namenew .= ' ' . ($name_index + 1);
+      }
+
+      form_set_value($form['name'], $namenew, $form_state);
+    }
+  }
+  else {
+    // The username is already assigned to the email address provided.
+    // Prompt the user with an error.
+    // (Javascript will handle showing the username field so users can choose.)
+    form_set_error('name',
+        '<p>' . t('An account has already been created with the email address %mail.  If you are sharing this account with others, you can use this email address as well by creating a new username below.  In the future, you will need to log in with this username, rather than the shared email address.', array('%mail' => $mail)) . '</p>' .
+        '<p>' . t('Not a shared account?  <a href="/user/password">Request a new password</a>, or <a href="/contact">contact PlantRight for assistance</a>.') . '</p>'
+    );
+
+  }
+}
+
+/**
+ * Implementation of hook_form_alter().
+ */
 function plantright_form_alter(&$form, &$form_state, $form_id) {
   global $user;
   if ($form_id == 'user_register') {
 //    $form['#tree'] = TRUE;
     $form['account']['mail']['#description'] = 'A valid e-mail address. All e-mails from the system will be sent to this address.<br />
       The e-mail address is not made public and your information will not be sold, or shared with others.';
-    $form['name']['#type'] = 'hidden';
-    $form['name']['#default_value'] = user_password();
+//    $form['name']['#type'] = 'hidden';
+//    $form['name']['#default_value'] = user_password();
+    $form['#after_build'] = array('plantright_user_register_after_build');
+    array_unshift($form['#validate'], '_plantright_register_validate');
+
+    if (isset($form['#node']) && isset($form['#node']->type) && 'continuing_education_member' == $form['#node']->type) {
+      $form['#redirect'] = 'node/2948';
+    }
+    
   }
   if ($form_id == 'user_login' || $form_id == 'user_login_block') {
     $form['#action'] = NULL;
+    array_unshift($form['#validate'], '_plantright_login_validate');
     $form['#submit'] = array('_plantright_login_action');
   }
   if ($form_id == 'user_pass_reset') {
@@ -98,26 +229,38 @@ function plantright_form_alter(&$form, &$form_state, $form_id) {
     $form['contact']['#prefix'] = '<div class="contact-info">';
     $form['contact']['#suffix'] = '</div>';
   }
-  if ($form_id == 'survey_profile_node_form' || $form_id == 'retail_member_node_form') {
+  if ($form_id == 'continuing_education_member_node_form' || $form_id == 'survey_profile_node_form' || $form_id == 'retail_member_node_form') {   
     $form['title']['#type'] = 'hidden';
-    $form['account']['name']['#type'] = 'hidden';
+    if (isset($form['account']['name'])) {
+      $form['account']['name']['#type'] = 'hidden';
+    }
+    $form['#after_build'] = array('plantright_user_register_after_build');
+
+    // Redirect on edit back to user page.
+    $account_id = $form['uid']['#value'];
+    if ($account_id) {
+      $form['#redirect'] = "user/$account_id";
+    }
+    else {
+      $form['#redirect'] = "user";
+    }
   }
   if ($form_id == 'business_node_form') {
-    $form['#redirect'] = 'invite';
     $form['buttons']['submit']['#value'] = 'Register Store';
-    //$form['#']
-    //dpm($form);
+
+    $nursery_name = isset($form_state['values']['title']) ? $form_state['values']['title'] : '';
+
     $pledge = <<<PLEDGE
       <h3>RETAIL PARTNER AGREEMENT (for pilot program)</h3>
 
-      <p>This agreement is entered between <span class="nursery-name"></span> and Sustainable Conservation, a 501c3 nonprofit that runs the PlantRight initiative. Since 2005, Sustainable Conservation has been collaborating with Californiaâ€™s horticultural industry to identify cost-effective, voluntary measures to stop the sale of known invasive plants and to prevent the introduction of new invasive varieties. Sustainable Conservation recognizes nursery retailersâ€™ leadership role in increasing consumer awareness about the serious, costly problem posed by invasive plants. This joint-partnership effort aims to promote healthy local economies and ecosystems by encouraging the sale of non-invasive, climate-appropriate plants for California gardens and landscapes.</p>
+      <p>This agreement is entered between <span class="nursery-name">$nursery_name</span> and Sustainable Conservation, a 501c3 nonprofit that runs the PlantRight initiative. Since 2005, Sustainable Conservation has been collaborating with California’s horticultural industry to identify cost-effective, voluntary measures to stop the sale of known invasive plants and to prevent the introduction of new invasive varieties. Sustainable Conservation recognizes nursery retailers’ leadership role in increasing consumer awareness about the serious, costly problem posed by invasive plants. This joint-partnership effort aims to promote healthy local economies and ecosystems by encouraging the sale of non-invasive, climate-appropriate plants for California gardens and landscapes.</p>
 
-      <p>As an authorized representative of <span class="nursery-name"></span>, our store agrees to adopt the principles of PlantRight during this pilot program (from the present date to June 2013). As part of this agreement:</p>
+      <p>As an authorized representative of <span class="nursery-name">$nursery_name</span>, our store agrees to adopt the principles of PlantRight during this pilot program (from the present date to June 2013). As part of this agreement:</p>
 
       <p>We recognize that:</p>
 <ul>
-      <li>Invasive plants are a threat to Californiaâ€™s natural ecosystems and economy. They crowd out existing plants and wildlife, increase fire severity, reduce agricultural yields, decrease land value, impact water supply, and degrade recreational opportunities. Over $82 million is spent managing invasive plants in our state each year, yet they continue to spread.</li>
-      <li>Californiaâ€™s nursery industry has a key role to play in preventing the introduction and proliferation of invasive plants.</li>
+      <li>Invasive plants are a threat to California’s natural ecosystems and economy. They crowd out existing plants and wildlife, increase fire severity, reduce agricultural yields, decrease land value, impact water supply, and degrade recreational opportunities. Over $82 million is spent managing invasive plants in our state each year, yet they continue to spread.</li>
+      <li>California’s nursery industry has a key role to play in preventing the introduction and proliferation of invasive plants.</li>
       <li>Offering non-invasive plants to our customers is a key component to providing regionally appropriate plant recommendations.</li>
       <li>PlantRight conducts a survey of randomly selected nurseries each spring to document the availability of the invasive plants on its list. This is a voluntary, non-regulatory effort through which the identity of surveyed stores is protected and only aggregated data is publicly released.</li>
 </ul>
@@ -128,88 +271,130 @@ function plantright_form_alter(&$form, &$form_state, $form_id) {
       <li>Encourage all sales staff to complete the PlantRight 101 training course and pass the test.</li>
       <li>Make every reasonable effort to communicate our PlantRight policy to staff, customers and vendors. (Communication vehicles may include: staff training, print materials, customer service, do-not-buy lists, email, website and social media.)</li>
       <li>Appoint a PlantRight liaison as a primary point of contact.</li>
-      <li>Revisit this agreement with PlantRight on an annual basis as PlantRightâ€™s invasive plant list is annually reviewed and may change as new information becomes available.</li>
-</ul>  
+      <li>Revisit this agreement with PlantRight on an annual basis as PlantRight’s invasive plant list is annually reviewed and may change as new information becomes available.</li>
+</ul>
 
       <p>We will receive:</p>
 <ul>
       <li>Free PlantRight 101 training for our staff.</li>
-      <li>Online access to PlantRightâ€™s Partner Toolkit and educational resources (e.g. the latest PlantRight invasive plants list, editorial content, research, on-going training materials and invasive plant trivia, as well as marketing materials, signage, etc.) to help communicate our PlantRight policy to customers, staff and vendors.</li>
+      <li>Online access to PlantRight’s Partner Toolkit and educational resources (e.g. the latest PlantRight invasive plants list, editorial content, research, on-going training materials and invasive plant trivia, as well as marketing materials, signage, etc.) to help communicate our PlantRight policy to customers, staff and vendors.</li>
       <li>90-days advance notice, should any new plants be added to the PlantRight invasive plants list.</li>
-      <li>A list of non-invasive plants to recommend to customers and vendors as suitable alternatives to the plants on PlantRightâ€™s invasive list.</li>
+      <li>A list of non-invasive plants to recommend to customers and vendors as suitable alternatives to the plants on PlantRight’s invasive list.</li>
       <li>Recognition for our commitment to, and collaboration with, PlantRight. This recognition will take the form of publicity via quarterly PlantRight press coverage and articles (online and offline).*</li>
-      <li>Listing (our company name and contact information) in PlantRightâ€™s online business directory.*</li>
+      <li>Listing (our company name and contact information) in PlantRight’s online business directory.*</li>
 </ul>
 PLEDGE;
     $form['field_pledge']['#prefix'] = $pledge;
+
+    if (!user_access('administer nodes')) {
+      $form['#redirect'] = 'invite';
+      $form['group_admin_only']['#access'] = FALSE;
+      $form['field_include_in_retailer_choice']['#access'] = FALSE;
+      $form['field_is_certified_date']['#access'] = FALSE;
+    }
   }
   if ($form_id == 'invite_form') {
     $form['#redirect'] = 'user';
   }
-  if ($form_id == 'retail_member_node_form') {
-    $form['#redirect'] = "user/$user->uid";
-    $form['title']['#type'] = 'hidden';
-  }
-  //dpm($form);
-  
-  /*from changes to account_profile module*/
-  if (variable_get('content_profile_use_'. $form['#node']->type, FALSE) 
+
+  /* from changes to account_profile module */
+  if (variable_get('content_profile_use_' . $form['#node']->type, FALSE)
       && content_profile_page_access($form['#node']->type, $user)) {
     $profile = $form_id;
   }
   switch ($form_id) {
     case 'user_profile_form':
-        if (variable_get('account_profile_redirect', TRUE)) {
-          if (isset($_REQUEST['destination'])) {
-            $destination = $_REQUEST['destination'];
-            unset($_REQUEST['destination']);
-            drupal_goto($_GET['q'] . "/$profile", array('destination' => $destination));
-          }
-          else {
-             drupal_goto($_GET['q'] . "/$profile");
-          }
-          // header("Location: " . base_path() . $_GET['q'] . "/$profile");
-          exit;
+      if (variable_get('account_profile_redirect', TRUE)) {
+        if (isset($_REQUEST['destination'])) {
+          $destination = $_REQUEST['destination'];
+          unset($_REQUEST['destination']);
+          drupal_goto($_GET['q'] . "/$profile", array('destination' => $destination));
         }
-    break;
+        else {
+          drupal_goto($_GET['q'] . "/$profile");
+        }
+        // header("Location: " . base_path() . $_GET['q'] . "/$profile");
+        exit;
+      }
+      break;
     case $profile:
       /* integration with account form */
       if (is_numeric(arg(1))) { // activate only on edit page (not on registration page)
-          // check if we are on a user account or node edit page
-          if (arg(0) == 'user') { // on account edit page
-            $user = user_load(arg(1));  
-          } elseif (arg(0) == 'node') { // on content profile node edit page
-            $node = node_load(arg(1));
-            $user = user_load($node->uid);
-          }
+        // check if we are on a user account or node edit page
+        if (arg(0) == 'user') { // on account edit page
+          $account = user_load(arg(1));
+        }
+        elseif (arg(0) == 'node') { // on content profile node edit page
+          $node = node_load(arg(1));
+          $account = user_load($node->uid);
+        }
 
-          module_load_include('pages.inc', 'user');
+        module_load_include('pages.inc', 'user');
 
-          $form['account_profile_uid'] = array(
-            '#type' => 'value',
-            '#value' => $user->uid,
-          );
+        $form['account_profile_uid'] = array(
+          '#type' => 'value',
+          '#value' => $account->uid,
+        );
+        //Remove account so in case its set, account form version is used.
+        $form['account'] = NULL;
+        unset($form['account']);
+        $account_form = user_profile_form(array(), $account);
+        unset($account_form['submit'], $account_form['delete']); // remove duplicated Save button and Delete
+        $form = array_merge($form, $account_form);
+        $form['#validate'][] = 'account_profile_form_validate';
+        $form['#validate'][] = 'user_validate_picture';
+        $form['#submit'][] = 'account_profile_form_submit';
+        $form['#submit'][] = 'account_profile_user_profile_submit';
 
-          $account_form = user_profile_form(array(), $user);
-          unset($account_form['submit'], $account_form['delete']); // remove duplicated Save button and Delete
-          $form = array_merge($account_form, $form);
-          $form['#validate'][] = 'account_profile_form_validate';
-          $form['#validate'][] = 'user_validate_picture';
-          $form['#submit'][] = 'account_profile_form_submit';
-          $form['#submit'][] = 'account_profile_user_profile_submit';
+        // Reorder the form elements.
+        $form['mimemail']['#weight'] = $form['contact']['#weight'] = 100;
+        $form['account']['#weight'] = 90;
       }
-      /* Integration with Notifications autosubscribe module  */ 
+      /* Integration with Notifications autosubscribe module  */
       if (module_exists('notifications_autosubscribe')) {
         // Call hook_form_alter from notifications_autosubscribe
         // Simulating we are on the user edit form so the
         // autosubscribe check box is included on the form
         notifications_autosubscribe_form_alter($form, $form_state, 'user_profile_form');
       }
-    break;
+      break;
     default:
   }
 }
 
+/**
+ * Helper function that changes the user registration form.
+ */
+function plantright_user_register_after_build(&$form, &$form_state) {
+  // Change "none" on the retailer select field.
+  if (isset($form['field_retailer'])) {
+    $form['field_retailer']['nid']['nid']['#options'][''] = t('Store not registered yet');
+  }
+  else if (isset($form['group_personal']) && isset($form['group_personal']['field_retailer'])) {
+    $form['group_personal']['field_retailer']['nid']['nid']['#options'][''] = t('Store not registered yet');
+  }
+  return $form;
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+function plantright_menu() {
+  $items = array();
+  $items['invites/user/%user'] = array(
+    'title' => 'Invite Status',
+    'page callback' => 'plantright_invite_status',
+    'page arguments' => array(2),
+    'access callback' => 'plantright_invite_status_access',
+    'access arguments' => array(2),
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+/**
+ * Implementation of hook_menu_alter().
+ */
 function plantright_menu_alter(&$items) {
   $items['user/reset/%/%/%'] = array(
     'title' => 'Reset password',
@@ -236,7 +421,7 @@ function plantright_user_pass_reset(&$form_state, $uid, $timestamp, $hashed_pass
     $timeout = 86400;
     $current = time();
     // Some redundant checks for extra security ?
-    if ($timestamp < $current && $account = user_load(array('uid' => $uid, 'status' => 1)) ) {
+    if ($timestamp < $current && $account = user_load(array('uid' => $uid, 'status' => 1))) {
       // Deny one-time login to blocked accounts.
       if (drupal_is_denied('user', $account->name) || drupal_is_denied('mail', $account->mail)) {
         drupal_set_message(t('You have tried to use a one-time login for an account which has been blocked.'), 'error');
@@ -259,21 +444,35 @@ function plantright_user_pass_reset(&$form_state, $uid, $timestamp, $hashed_pass
           user_authenticate_finalize($form_state['values']);
           drupal_set_message(t('You have just used your one-time login link. It is no longer necessary to use this link to login.'));
           $rids = array_keys($user->roles);
+
           if (in_array(7, $rids) || in_array(8, $rids) || in_array(9, $rids) || in_array(10, $rids)) {
             $node = node_load(array('type' => 'retail_member', 'uid' => $user->uid));
             drupal_set_message('Please reset your password.', 'status');
-            drupal_goto('node/' . $node->nid . '/edit');
-          } elseif (in_array(14, $rids)) {
-            $node = node_load(array('type' => 'survey_profile', 'uid' => $user->uid));
+
+            if ($node) {
+              drupal_goto('node/' . $node->nid . '/edit');
+            }
+            else {
+              drupal_goto();
+            }
+          }
+          elseif (in_array(14, $rids)) {
+            $node = node_load(array('type' => PLANTRIGHT_SURVEY_PROFILE, 'uid' => $user->uid));
             drupal_set_message('Please reset your password.', 'status');
-            drupal_goto('node/' . $node->nid . '/edit');
-          } else {
-            drupal_goto('/user' . $user->uid);
+            if ($node) {
+              drupal_goto('node/' . $node->nid . '/edit');
+            }
+            else {
+              drupal_goto();
+            }
+          }
+          else {
+            drupal_goto('user/' . $user->uid);
           }
         }
         else {
           $form['message'] = array('#value' => t('<p>This is a one-time login for %user_name and will expire on %expiration_date.</p><p>Click on this button to login to the site and change your password.</p>', array('%user_name' => $account->name, '%expiration_date' => format_date($timestamp + $timeout))));
-          $form['help'] = array('#value' => '<p>'. t('This login can be used only once.') .'</p>');
+          $form['help'] = array('#value' => '<p>' . t('This login can be used only once.') . '</p>');
           $form['submit'] = array('#type' => 'submit', '#value' => t('Log in'));
           $form['#action'] = url("user/reset/$uid/$timestamp/$hashed_pass/login");
           return $form;
@@ -289,5 +488,175 @@ function plantright_user_pass_reset(&$form_state, $uid, $timestamp, $hashed_pass
       // Everything will be in the watchdog's URL for the administrator to check.
       drupal_access_denied();
     }
+  }
+}
+
+/**
+ * Implementation of hook_mail_alter().
+ */
+function plantright_mail_alter(&$message) {
+  switch ($message['id']) {
+    // For the invite, set the inviter's name to their profile name.
+    // Instead of their user account name.
+    case 'invite_invite':
+      $inviter_user = user_load(array('mail' => $message['from']));
+      if ($inviter_user_name = plantright_get_user_profile_name($inviter_user)) {
+        $message['from'] = $inviter_user_name . '<' . $inviter_user->mail . '>';
+        $message['headers']['From'] = $inviter_user_name . '<' . $inviter_user->mail . '>';
+      }
+      break;
+  }
+}
+
+/**
+ * Helper function. Returns user's profile node.
+ */
+function plantright_get_user_profile($account) {
+  static $plantright_user_profile;
+  if (!isset($plantright_user_profile) || !isset($plantright_user_profile[$account->uid])) {
+    $profile = NULL;
+
+    if (in_array(15, array_keys($account->roles))) {
+      $profile = content_profile_load(PLANTRIGHT_CONTINUING_EDUCATION_PROFILE, $account->uid);
+    }
+    else if (in_array(14, array_keys($account->roles))) {
+      $profile = content_profile_load(PLANTRIGHT_SURVEY_PROFILE, $account->uid);
+    }
+    else {
+      $profile = content_profile_load(PLANTRIGHT_RETAIL_PROFILE, $account->uid);
+    }
+    $plantright_user_profile[$account->uid] = $profile;
+  }
+  return $plantright_user_profile[$account->uid];
+}
+
+/**
+ * Helper function. Returns user's profile name.
+ */
+function plantright_get_user_profile_name($account) {
+  static $plantright_user_profile_name;
+  if (!isset($plantright_user_profile_name) || !isset($plantright_user_profile_name[$account->uid])) {
+    $profile = plantright_get_user_profile($account);
+    if ($profile) {
+      // Profile exists. Replace the username with the profile name
+      $fname = $profile->{PLANTRIGHT_PROFILE_FNAME};
+      if ($fname) {
+        $fname = $fname[0]['value'];
+        $name = $fname;
+      }
+      $lname = $profile->{PLANTRIGHT_PROFILE_LNAME};
+      if ($lname) {
+        $lname = $lname[0]['value'];
+        $name = $name . ($name ? ' ' : '') . $lname;
+      }
+    }
+    $plantright_user_profile_name[$account->uid] = $name ? $name : $account->name;
+  }
+  return $plantright_user_profile_name[$account->uid];
+}
+
+/**
+ * Helper function. Returns user's profile nursery.
+ */
+function plantright_get_user_profile_nursery($account, $entities = TRUE) {
+  static $plantright_user_profile_nursery;
+  if (!isset($plantright_user_profile_nursery)) {
+    if ($profile = content_profile_load(PLANTRIGHT_RETAIL_PROFILE, $account->uid)) {
+      if ($profile->{PLANTRIGHT_RETAIL_PROFILE_NURSERY} && isset($profile->{PLANTRIGHT_RETAIL_PROFILE_NURSERY}[0]) && $nursery_nid = $profile->{PLANTRIGHT_RETAIL_PROFILE_NURSERY}[0]['nid']) {
+        $nursery = node_load($nursery_nid);
+        if ($nursery) {
+          $nursery_name = filter_xss($nursery->title);
+          if (!$entities) {
+            $nursery_name = html_entity_decode($nursery_name);
+          }
+        }
+      }
+    }
+    $plantright_user_profile_nursery = $nursery_name ? $nursery_name : 'our nursery';
+  }
+  return $plantright_user_profile_nursery;
+}
+
+/**
+ * Implementation of hook_views_query_alter().
+ */
+function plantright_views_query_alter(&$view, &$query) {
+  // Exclude the node author from rules_vbo_nursery_employees
+  switch ($view->name) {
+    case 'rules_vbo_nursery_employees':
+      $view->query->add_where(0, 'node_node_data_field_retailer__users.uid <> users.uid');
+      break;
+  }
+}
+
+/**
+ * Performs a query to get all employees of a retail nursery.
+ */
+function plantright_get_retailer_employees($retailer, $include_liason = TRUE) {
+   // If liason should not be included.
+  if (!$include_liason) {
+    $join = ' inner join node rn on rm.field_retailer_nid = rn.nid ';
+    $where = ' AND u.uid != rn.uid';
+  }
+  else {
+    $join = $where = '';
+  }
+  $results = db_query('select u.uid from {content_type_retail_member} rm
+                         inner join node n on n.nid = rm.nid
+                         inner join users u on n.uid = u.uid' . $join .
+                        'where rm.field_retailer_nid = %d' . $where, $retailer->nid);
+
+  $fellow_citizens = array();
+  while ($result = db_fetch_object($results)) {
+    array_push($fellow_citizens, user_load($result->uid));
+  }
+
+  return $fellow_citizens;
+}
+
+function plantright_get_partner_nurseries($entities = TRUE) {
+  $result = db_query("SELECT DISTINCT(node.nid) AS nid, node.title AS node_title, node.type AS node_type, node.nid AS node_nid
+    FROM {node} node
+    LEFT JOIN content_type_business node_data_field_is_certified ON node.vid = node_data_field_is_certified.vid
+    WHERE (node.type in ('business')) AND (node_data_field_is_certified.field_is_certified_value = 1)
+    GROUP BY nid
+    ORDER BY node_title ASC, node_nid ASC");
+  $nurseries = array();
+  while ($row = db_fetch_array($result)) {
+    $safe_row = array();
+    foreach ($row as $key => $val) {
+      $safe_row[$key] = filter_xss($val);
+      if (!$entities) {
+        $safe_row[$key] = html_entity_decode($safe_row[$key]);
+      }
+    }
+
+    $nurseries[] = $safe_row;
+  }
+  return $nurseries;
+}
+
+/**
+ * Page access callback for invite status.
+ */
+function plantright_invite_status_access($account) {
+  if (user_access('administer invitations') || $account->uid == $GLOBALS['user']->uid) {
+    return TRUE;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/**
+ * Page callback for invite status.
+ */
+function plantright_invite_status($account) {
+  if (module_exists('invite')) {
+    module_load_include('inc', 'invite', 'invite_admin');
+    return invite_admin_details($account);
+  }
+  else {
+    return t('Cannot get invites.');
   }
 }
